@@ -1,0 +1,45 @@
+# 📌 Install required libraries
+!pip install pdfminer.six pytesseract pdf2image poppler-utils tesseract-ocr-san
+
+# 📌 Import libraries
+import pytesseract
+from pdf2image import convert_from_path
+from PIL import Image
+import os
+
+# 📌 Mount Google Drive to access/save files
+from google.colab import drive
+drive.mount('/content/drive')
+
+# 📌 Path settings
+pdf_path = "/Charak-Sahinta.pdf"  # <-- Change this
+output_txt_path = "/content/drive/MyDrive/sanskrit_raw_output.txt"
+
+# 📌 Configure tesseract (Colab has it pre-installed)
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
+# 📌 OCR function in batches
+def process_pdf_in_batches(pdf_path, batch_size=5, dpi=200):
+    all_text = []
+    print("🔄 Converting PDF to images...")
+    pages = convert_from_path(pdf_path, dpi=dpi)
+    total_pages = len(pages)
+
+    for i in range(0, total_pages, batch_size):
+        batch = pages[i:i + batch_size]
+        for j, image in enumerate(batch):
+            page_number = i + j + 1
+            print(f"🧐 OCR on page {page_number}/{total_pages}...")
+            text = pytesseract.image_to_string(image, lang='san')
+            all_text.append(f"\n--- Page {page_number} ---\n{text}")
+
+    return "\n".join(all_text)
+
+# 📌 Run OCR safely
+extracted_text = process_pdf_in_batches(pdf_path, batch_size=5, dpi=200)
+
+# 📌 Save to text file
+with open(output_txt_path, "w", encoding="utf-8") as f:
+    f.write(extracted_text)
+
+print(f"\n✅ Done! OCR text saved to: {output_txt_path}")
