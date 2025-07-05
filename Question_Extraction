@@ -1,0 +1,49 @@
+# ✅ Install dependencies
+!pip install transformers sentencepiece torch pandas
+
+# ✅ Imports
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import torch
+import pandas as pd
+import os # Import the os module to access environment variables
+
+# ✅ Load mT5 model for question generation
+# model_name = "flax-community/mt5-base-question-generator"  # multilingual
+model_name = "cointegrated/rut5-base-multitask" # Changed to a public multilingual model for demonstration
+# If your model is private, uncomment the following line and add your token to Colab secrets
+# HF_TOKEN = os.getenv("HF_TOKEN") # Get token from environment variables
+
+tokenizer = AutoTokenizer.from_pretrained(model_name) # Add token=HF_TOKEN if using a private model
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name) # Add token=HF_TOKEN if using a private model
+
+# ✅ Load your cleaned Sanskrit text
+input_path = "/content/sanskrit_cleaned_segmented.txt"
+with open(input_path, "r", encoding="utf-8") as f:
+    text = f.read()
+
+# ✅ Split text into shlokas/paragraphs
+chunks = [chunk.strip() for chunk in text.split("\n\n") if len(chunk.strip()) > 20]
+
+# ✅ Function to generate question in Sanskrit
+def generate_question(text, prefix="Generate question in Sanskrit: ", max_length=128):
+    input_text = prefix + text
+    inputs = tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
+    outputs = model.generate(inputs, max_length=max_length, num_beams=4, early_stopping=True)
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+# ✅ Generate questions
+data = []
+for i, chunk in enumerate(chunks):
+    print(f"🔍 Processing chunk {i+1}/{len(chunks)}...")
+    try:
+        question = generate_question(chunk)
+        data.append({"context": chunk, "question": question})
+    except Exception as e:
+        print(f"⚠️ Error on chunk {i+1}: {e}")
+
+# ✅ Save to CSV/JSON
+df = pd.DataFrame(data)
+df.to_csv("/content/drive/MyDrive/sanskrit_questions_dataset.csv", index=False)
+df.to_json("/content/drive/MyDrive/sanskrit_questions_dataset.json", force_ascii=False, orient="records")
+
+print("✅ All questions generated and saved!")
