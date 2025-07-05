@@ -1,0 +1,43 @@
+import re
+
+# 📌 Paths
+input_file_path = "/sanskrit_raw_output.txt"
+output_file_path = "/content/drive/MyDrive/sanskrit_cleaned_segmented.txt"
+
+# 📌 Load the raw OCR text
+with open(input_file_path, "r", encoding="utf-8") as file:
+    raw_text = file.read()
+
+# 📌 Step 1: Basic cleaning
+def clean_text(text):
+    # Remove page markers
+    text = re.sub(r'\n--- Page \d+ ---\n', '\n', text)
+
+    # Remove extra symbols (OCR artifacts)
+    text = re.sub(r'[^\u0900-\u097F\s।॥\n]', '', text)  # Keep only Devanagari + whitespace + punctuations
+
+    # Normalize whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{2,}', '\n\n', text)  # Keep paragraph breaks
+
+    # Fix OCR misreads (optional, add more as needed)
+    text = text.replace("॥", "॥\n")  # Break after double danda
+    text = text.replace("।।", "॥")   # Fix duplicate OCR errors
+
+    return text.strip()
+
+# 📌 Step 2: Segment the text into verses or paragraphs
+def segment_text(text):
+    segments = text.split("॥\n")  # Split at end of shlokas
+    cleaned_segments = [seg.strip() + " ॥" for seg in segments if seg.strip()]
+    return "\n\n".join(cleaned_segments)
+
+# 📌 Run cleaning and segmentation
+cleaned_text = clean_text(raw_text)
+segmented_text = segment_text(cleaned_text)
+
+# 📌 Save output
+with open(output_file_path, "w", encoding="utf-8") as file:
+    file.write(segmented_text)
+
+print(f"✅ Cleaned and segmented text saved to: {output_file_path}")
