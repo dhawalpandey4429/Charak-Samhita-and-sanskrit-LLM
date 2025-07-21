@@ -1,49 +1,83 @@
-# ✅ Install dependencies
-!pip install transformers sentencepiece torch pandas
+# 📦 Install dependencies
+!pip install transformers sentencepiece torch pandas tqdm
 
-# ✅ Imports
+# 📚 Import libraries
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from tqdm import tqdm
 import torch
 import pandas as pd
-import os # Import the os module to access environment variables
 
-# ✅ Load mT5 model for question generation
-# model_name = "flax-community/mt5-base-question-generator"  # multilingual
-model_name = "cointegrated/rut5-base-multitask" # Changed to a public multilingual model for demonstration
-# If your model is private, uncomment the following line and add your token to Colab secrets
-# HF_TOKEN = os.getenv("HF_TOKEN") # Get token from environment variables
+# ✅ Load model
+model_name = "google/mt5-small"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
-tokenizer = AutoTokenizer.from_pretrained(model_name) # Add token=HF_TOKEN if using a private model
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name) # Add token=HF_TOKEN if using a private model
-
-# ✅ Load your cleaned Sanskrit text
+# ✅ Load cleaned Sanskrit text
 input_path = "/content/sanskrit_cleaned_segmented.txt"
 with open(input_path, "r", encoding="utf-8") as f:
     text = f.read()
 
-# ✅ Split text into shlokas/paragraphs
+# ✅ Split into chunks
 chunks = [chunk.strip() for chunk in text.split("\n\n") if len(chunk.strip()) > 20]
 
-# ✅ Function to generate question in Sanskrit
-def generate_question(text, prefix="Generate question in Sanskrit: ", max_length=128):
+# ✅ Question generation
+def generate_question(text, prefix="सङ्क्षिप्त प्रश्नः निर्मीयताम्: ", max_length=128):
     input_text = prefix + text
     inputs = tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
     outputs = model.generate(inputs, max_length=max_length, num_beams=4, early_stopping=True)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# ✅ Generate questions
+# ✅ Simple Sanskrit answer extractor
+def extract_answer(context, question):
+    sentences = [s.strip() for s in context.split("।") if len(s.strip()) > 10]
+    return sentences[0] + "।" if sentences else context.strip()
+
+# ✅ Sanskrit question classifier (rule-based)
+def classify_question_sanskrit(question):
+    question = question.strip()
+
+    factual = ["किम्", "कः", "के", "कस्मिन्", "को", "कानि", "कस्य"]
+    conceptual = ["कथम्", "कुतः", "कस्मात्", "किं कारणम्", "स्पष्टीकुरु", "केन प्रकारेण"]
+    thematic = ["का भूमिका", "कः तात्पर्यम्", "विचारय", "आलेखय", "विश्लेषणं", "वर्णय"]
+
+    for word in conceptual:
+        if word in question:
+            return "विचारात्मकम्"
+
+    for word in thematic:
+        if word in question:
+            return "विषयप्रधानम्"
+
+    for word in factual:
+        if word in question:
+            return "तथ्यात्मकम्"
+
+    return "तथ्यात्मकम्"  # Default fallback
+
+# ✅ Process everything
 data = []
-for i, chunk in enumerate(chunks):
-    print(f"🔍 Processing chunk {i+1}/{len(chunks)}...")
+
+for i, chunk in enumerate(tqdm(chunks, desc="📘 Generating QA Pairs with Labels")):
     try:
         question = generate_question(chunk)
-        data.append({"context": chunk, "question": question})
+        answer = extract_answer(chunk, question)
+        label = classify_question_sanskrit(question)
+
+        data.append({
+            "context": chunk,
+            "question": question,
+            "answer": answer,
+            "label": label
+        })
+
     except Exception as e:
-        print(f"⚠️ Error on chunk {i+1}: {e}")
+        print(f"⚠️ Error at chunk {i+1}: {e}")
 
-# ✅ Save to CSV/JSON
+# ✅ Save to CSV
+output_csv_path = "/content/sanskrit_qa_classified_dataset.csv"
 df = pd.DataFrame(data)
-df.to_csv("/content/drive/MyDrive/sanskrit_questions_dataset.csv", index=False)
-df.to_json("/content/drive/MyDrive/sanskrit_questions_dataset.json", force_ascii=False, orient="records")
+df.to_csv(output_csv_path, index=False, encoding="utf-8-sig")
+print(f"\n✅ Labeled QA dataset saved at: {output_csv_path}")
 
-print("✅ All questions generated and saved!")
+from google.colab import files
+files.download("/content/sanskrit_qa_classified_dataset.csv")
