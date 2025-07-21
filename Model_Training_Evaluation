@@ -1,0 +1,76 @@
+# 📌 Step 1: Install Required Libraries
+!pip install transformers datasets sentencepiece --quiet
+
+# 📌 Step 2: Imports
+import pandas as pd
+import torch
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, Seq2SeqTrainer, Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, TrainerCallback, TrainerState, TrainerControl
+from datasets import Dataset
+
+# 📌 Step 3: Load Dataset
+df = pd.read_csv("sanskrit_qa_classified_dataset.csv")  # Ensure this matches uploaded filename
+
+# Only use necessary columns
+df = df[['context', 'question', 'answer']].dropna()
+
+# Combine context and question as input
+df['input'] = df['context'] + "\nप्रश्नः: " + df['question']
+df['target'] = df['answer']
+
+# 📌 Step 4: Load Pretrained Model and Tokenizer
+model_checkpoint = "google/mt5-small"  # Supports Sanskrit
+tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint)
+
+# 📌 Step 5: Tokenize Data
+def tokenize_fn(example):
+    return tokenizer(example['input'], text_target=example['target'], truncation=True, padding="max_length", max_length=256)
+
+dataset = Dataset.from_pandas(df[['input', 'target']])
+tokenized_dataset = dataset.map(tokenize_fn, batched=True)
+
+# 📌 Step 6: Training Arguments
+training_args = Seq2SeqTrainingArguments(
+    output_dir="./sanskrit_qa_model",
+    evaluation_strategy="epoch",
+    learning_rate=2e-5,
+    per_device_train_batch_size=4,
+    per_device_eval_batch_size=4,
+    num_train_epochs=3,
+    weight_decay=0.01,
+    save_total_limit=2,
+    save_strategy="epoch",
+    predict_with_generate=True,
+    logging_dir="./logs",
+    logging_steps=10,
+)
+
+# 📌 Step 7: Data Collator
+data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
+
+# 📌 Step 8: Trainer Setup
+trainer = Seq2SeqTrainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset,
+    eval_dataset=tokenized_dataset.select(range(100)),  # Small subset for eval
+    tokenizer=tokenizer,
+    data_collator=data_collator,
+)
+
+# 📌 Step 9: Train Model
+trainer.train()
+
+# 📌 Step 10: Save Final Model
+model.save_pretrained("sanskrit_qa_final_model")
+tokenizer.save_pretrained("sanskrit_qa_final_model")
+
+# 📌 Step 11: Inference Example
+def generate_answer(context, question):
+    input_text = context + "\nप्रश्नः: " + question
+    inputs = tokenizer(input_text, return_tensors="pt", truncation=True).to(model.device)
+    outputs = model.generate(**inputs, max_length=100)
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+# Example Usage:
+# print(generate_answer("धन्वन्तरिः वैद्यकशास्त्रस्य पिता अस्ति", "वैद्यकशास्त्रस्य पिता कः अस्ति?"))
